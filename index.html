@@ -1,0 +1,688 @@
+<!DOCTYPE html>
+<html lang="fa">
+<head>
+  <meta charset="utf-8" />
+  <title>داشبورد گیمینگ — Neon Galaxy (Final)</title>
+  <meta name="viewport" content="width=device-width,initial-scale=1" />
+  <link href="https://fonts.googleapis.com/css2?family=Vazirmatn:wght@400;700&display=swap" rel="stylesheet">
+  <style>
+    :root{
+      --bg-dark: #050507;
+      --neon-green: #00ff88;
+      --neon-purple: #8a3cff;
+      --accent-pink: #ff2a6d;
+      --muted: #bcd5e6;
+      --glass: rgba(10,10,12,0.6);
+      --card-reflect: linear-gradient(120deg, rgba(255,255,255,0.06), rgba(255,255,255,0.01));
+    }
+    html,body{
+      height:100%;
+      margin:0;
+      padding:0;
+      font-family:'Vazirmatn',sans-serif;
+      direction:rtl;
+      background:var(--bg-dark);
+      color:#e9f6ff;
+      -webkit-font-smoothing:antialiased;
+      -moz-osx-font-smoothing:grayscale;
+      overflow-y: overlay;
+    }
+
+    /* ---------- Neon scrollbar (right) ---------- */
+    ::-webkit-scrollbar{ width:14px; }
+    ::-webkit-scrollbar-track{ background: rgba(255,255,255,0.02); border-left:1px solid rgba(255,255,255,0.02); border-radius:8px; margin:8px 0; }
+    ::-webkit-scrollbar-thumb{
+      background: linear-gradient(180deg, rgba(138,60,255,0.45), rgba(0,255,136,0.45));
+      border-radius:8px;
+      box-shadow: 0 0 12px rgba(138,60,255,0.08), inset 0 0 8px rgba(0,0,0,0.4);
+      border: 2px solid rgba(0,0,0,0.35);
+    }
+
+    /* ---------- Three.js canvas (background) ---------- */
+    #bgCanvas{
+      position:fixed; inset:0; width:100%; height:100%; z-index:0;
+      display:block; pointer-events:none; /* critical: doesn't block clicks */
+      background: linear-gradient(180deg, rgba(0,0,0,0.55), rgba(0,0,0,0.6));
+    }
+
+    /* top loader overlay while WebGL compiles */
+    #loader {
+      position: fixed; inset:0; z-index:2200; display:flex; align-items:center; justify-content:center;
+      background: linear-gradient(180deg, rgba(0,0,0,0.86), rgba(0,0,0,0.56));
+      backdrop-filter: blur(6px);
+      transition: opacity .45s ease, visibility .45s;
+    }
+    #loader.hidden { opacity:0; visibility:hidden; pointer-events:none; }
+
+    .loader-card {
+      padding:20px 28px; border-radius:12px; text-align:center;
+      background: linear-gradient(180deg, rgba(8,6,12,0.75), rgba(20,12,30,0.45));
+      border:1px solid rgba(255,255,255,0.04);
+      box-shadow: 0 12px 50px rgba(0,0,0,0.7);
+    }
+    .neon-logo { font-weight:900; font-size:18px; color:var(--neon-purple); text-shadow: 0 0 16px rgba(138,60,255,0.12); }
+    .spinner { width:56px; height:56px; margin:12px auto; border-radius:50%;
+      background: conic-gradient(from 0deg, rgba(0,255,136,0.95), rgba(138,60,255,0.95));
+      mask: radial-gradient(farthest-side, transparent calc(100% - 10px), black 0);
+      -webkit-mask: radial-gradient(farthest-side, transparent calc(100% - 10px), black 0);
+      animation: spin 1.5s linear infinite;
+      box-shadow: 0 0 22px rgba(0,255,136,0.12), 0 0 36px rgba(138,60,255,0.08);
+    }
+    @keyframes spin { to { transform: rotate(1turn); } }
+
+    /* ---------- page (content above canvas) ---------- */
+    .page { position:relative; z-index:10; min-height:100vh; display:flex; flex-direction:column; align-items:center; padding:68px 18px 40px 18px; gap:18px; }
+
+    /* user-panel button */
+    .user-panel-btn {
+      position: fixed; top:12px; left:12px; z-index:1010;
+      background: linear-gradient(90deg, rgba(138,60,255,0.96), rgba(0,255,136,0.96));
+      border:none; padding:.52rem .96rem; border-radius:12px; color:black; font-weight:900; cursor:pointer;
+      box-shadow: 0 10px 30px rgba(0,0,0,0.6);
+      transition: transform .14s ease;
+    }
+    .user-panel-btn:hover{ transform: translateY(-3px); }
+
+    .user-panel {
+      position: fixed; top:64px; left:12px; z-index:1010; width:300px; padding:12px; border-radius:14px;
+      background: linear-gradient(180deg, rgba(10,10,14,0.9), rgba(20,12,28,0.6));
+      border:1px solid rgba(138,60,255,0.08); box-shadow:0 12px 40px rgba(0,0,0,0.7); overflow:hidden;
+      opacity:0; max-height:0; transition: all .4s cubic-bezier(.2,.9,.25,1); backdrop-filter: blur(6px);
+    }
+    .user-panel.show{ opacity:1; max-height:600px; }
+    .user-panel h2{ color:var(--neon-green); margin:0 0 8px 0; text-align:center; text-shadow:0 0 8px rgba(0,255,136,0.14);}
+    .user-panel p{ margin:.4rem 0; font-size:.95rem; color:var(--muted); border-bottom:1px solid rgba(255,255,255,0.03); padding-bottom:6px; }
+
+    .container { z-index:10; width:100%; max-width:1200px; display:flex; flex-direction:column; align-items:center; gap:18px; padding:6px; }
+
+    /* download / info */
+    .download-card { width:100%; max-width:640px; padding:14px; border-radius:14px; background: linear-gradient(180deg, rgba(0,0,0,0.6), rgba(10,4,12,0.35)); border:1px solid rgba(255,42,109,0.06); box-shadow:0 10px 40px rgba(0,0,0,0.6); }
+    .download-card p{ color:#ffd6dc; font-weight:700; line-height:1.6; }
+
+    /* quick match */
+    .quick-match { width:100%; max-width:480px; padding:12px; border-radius:14px; background: linear-gradient(180deg, rgba(0,0,0,0.56), rgba(0,0,0,0.25)); border:1px solid rgba(0,255,136,0.06); box-shadow:0 8px 36px rgba(0,0,0,0.6); }
+    .quick-match h1 { font-weight:900; background: linear-gradient(90deg,var(--neon-purple),var(--neon-green)); -webkit-background-clip:text; color:transparent; font-size:1.2rem; display:inline-block; }
+
+    .quick-match button, .quick-match select { margin:.8rem auto; display:block; padding:.5rem .95rem; border-radius:10px; border:none; font-weight:900; cursor:pointer; background: linear-gradient(90deg, rgba(0,255,136,0.96), rgba(138,60,255,0.96)); color:black; }
+
+    .status-msg { font-weight:800; min-height:28px; color:#fff; }
+
+    /* server boxes with reflection + dynamic highlight */
+    .server-boxes { display:flex; gap:16px; justify-content:center; flex-wrap:wrap; width:100%; max-width:1080px; z-index:10; }
+    .server-item {
+      width:280px; min-height:300px; background: linear-gradient(180deg, rgba(8,8,12,0.9), rgba(20,18,28,0.6)); border-radius:14px; padding:12px; position:relative; overflow:hidden;
+      border:1px solid rgba(255,255,255,0.03); box-shadow: 0 14px 60px rgba(0,0,0,0.7);
+      transform-style: preserve-3d; transition: transform .18s cubic-bezier(.2,.9,.25,1), box-shadow .18s;
+      will-change: transform;
+      cursor:default;
+    }
+    .server-item:hover{ transform: translateY(-10px) rotateX(1deg); box-shadow: 0 30px 90px rgba(0,0,0,0.72), 0 0 40px rgba(138,60,255,0.03); }
+
+    .server-item .main-img{ width:100%; height:160px; object-fit:cover; border-radius:8px; pointer-events:none; user-select:none; display:block; }
+    .server-item .icon{ width:44px; margin-top:-26px; pointer-events:none; }
+    .server-item h3{ margin:10px 0 6px; font-weight:900; background: linear-gradient(90deg,var(--neon-green),var(--neon-purple)); -webkit-background-clip:text; color:transparent; }
+    .server-item p{ color:#ff9aa2; font-weight:800; }
+
+    .connect-btn { padding:.7rem 1.2rem; border-radius:12px; font-weight:900; border:none; cursor:pointer; background: linear-gradient(90deg, rgba(0,255,136,0.98), rgba(138,60,255,0.95)); color:black; }
+
+    /* reflection overlay on card - moves with mouse */
+    .card-reflect {
+      position:absolute; inset:0; pointer-events:none; mix-blend-mode: screen; opacity:0.9;
+      background: linear-gradient(120deg, rgba(255,255,255,0.04), rgba(255,255,255,0.01));
+      transform-origin:center;
+      transition: transform .18s ease, opacity .25s;
+    }
+
+    /* server-status placeholder */
+    .server-status{ margin-top:12px; min-height:84px; display:flex; align-items:center; justify-content:center; gap:10px; flex-direction:column; }
+
+    /* online badge */
+    .online-badge {
+      width:40px; height:40px; border-radius:50%; position:relative; overflow:hidden; display:inline-block;
+      box-shadow: 0 0 14px rgba(0,255,136,0.14), inset 0 0 10px rgba(0,255,136,0.06);
+      border:1px solid rgba(0,255,136,0.16);
+      background: radial-gradient(circle at 30% 30%, rgba(255,255,255,0.03), transparent 30%), linear-gradient(180deg, rgba(0,0,0,0.35), rgba(10,10,10,0.1));
+      transform: translateZ(0);
+    }
+    .online-badge .stripes { position:absolute; inset:0; background-image: linear-gradient(90deg, rgba(0,255,136,0.06) 0 4px, rgba(0,0,0,0) 4px 8px); transform: translateX(0); animation: stripeMove 1.05s linear infinite; mix-blend-mode: screen; opacity:0.95; }
+    @keyframes stripeMove { to { transform: translateX(-30%); } }
+    .online-badge .dot { position:absolute; width:10px; height:10px; border-radius:50%; right:6px; bottom:6px; background: radial-gradient(circle, #b7ffd6, #00ff88 60%, rgba(0,255,136,0.9)); box-shadow:0 0 12px rgba(0,255,136,0.9); animation: pulse 1.4s ease-in-out infinite; }
+    @keyframes pulse { 0%{ transform:scale(.8); opacity:.85 } 50%{ transform:scale(1.2); opacity:1 } 100%{ transform:scale(.9); opacity:.9 } }
+
+    /* connect loader: pulsing bars + galaxy shimmer */
+    .connect-loader {
+      width:100%; max-width:240px; height:44px; border-radius:12px; overflow:hidden;
+      background: linear-gradient(90deg, rgba(255,255,255,0.02), rgba(255,255,255,0.01));
+      display:flex; align-items:center; gap:10px; justify-content:center; position:relative; border:1px solid rgba(255,255,255,0.03); box-shadow: inset 0 0 20px rgba(0,0,0,0.6);
+    }
+    .pulse-bar { width:8px; height:22px; border-radius:4px; background: linear-gradient(180deg, var(--neon-purple), var(--neon-green)); animation: pulseBar 1s ease-in-out infinite; opacity:0.98; transform-origin: bottom center; }
+    .pulse-bar:nth-child(2){ animation-delay:.12s; height:16px; }
+    .pulse-bar:nth-child(3){ animation-delay:.24s; height:24px; }
+    .pulse-bar:nth-child(4){ animation-delay:.36s; height:18px; }
+    .pulse-bar:nth-child(5){ animation-delay:.48s; height:22px; }
+    @keyframes pulseBar { 0%{ transform:scaleY(.35) translateY(8px) } 50%{ transform:scaleY(1.03) translateY(0) } 100%{ transform:scaleY(.45) translateY(6px) } }
+
+    .connect-loader::before { content:""; position:absolute; inset:0; background: radial-gradient(ellipse at 10% 30%, rgba(255,255,255,0.02), transparent 10%), radial-gradient(ellipse at 80% 60%, rgba(138,60,255,0.03), transparent 25%); mix-blend-mode: screen; pointer-events:none; }
+
+    /* final message box */
+    .final-msg { padding:10px 12px; border-radius:12px; background: linear-gradient(180deg, rgba(0,0,0,0.45), rgba(10,8,16,0.35)); border:1px solid rgba(0,255,136,0.06); width:100%; display:flex; flex-direction:column; align-items:center; gap:8px; }
+    .final-msg .persian{ font-weight:900; color:#fff; font-size:0.95rem; text-align:center; }
+    .final-msg .english{ color:var(--neon-green); font-weight:900; font-size:0.9rem; display:flex; align-items:center; gap:8px; }
+
+    footer { z-index:10; padding:12px; }
+    footer a{ color:var(--accent-pink); font-weight:900; text-decoration:none; text-shadow:0 0 6px rgba(255,42,109,0.25); }
+
+    /* game section (bottom) */
+    #game-section { width:100%; max-width:920px; z-index:10; margin-top:12px; text-align:center; }
+    .game-title { font-weight:900; margin-bottom:8px; color:#e9f6ff; }
+    #game-options { display:flex; flex-wrap:wrap; gap:10px; justify-content:center; }
+    .game-btn { padding:10px 18px; border-radius:10px; font-weight:900; border:none; cursor:pointer; color:white; box-shadow: 0 8px 24px rgba(0,0,0,0.6); transition: transform .12s; }
+    .game-btn:hover{ transform: translateY(-6px) scale(1.02); }
+
+    /* RGB selected-game badge */
+    #selected-game {
+      margin-top:12px; font-weight:900; font-size:22px; letter-spacing:1px; padding:8px 14px; border-radius:12px;
+      background: linear-gradient(90deg, rgba(255,255,255,0.03), rgba(255,255,255,0.01));
+      border:1px solid rgba(255,255,255,0.03);
+      display:inline-block; min-width:220px;
+      /* RGB animated text */
+      color: transparent; -webkit-background-clip: text; background-clip: text;
+      animation: rgbShift 4s linear infinite;
+      background-image: linear-gradient(90deg, #ff004d, #ff8a00, #ffef00, #00ff88, #6a2bd6, #ff004d);
+      text-align:center;
+      box-shadow: 0 8px 30px rgba(0,0,0,0.6);
+    }
+    @keyframes rgbShift { 0%{ background-position:0% } 100%{ background-position:200% } }
+
+    /* responsive */
+    @media (max-width:760px){
+      .server-item{ width:100%; max-width:520px; }
+      .user-panel{ left:8px; width:92%; }
+      .container{ padding:8px; }
+    }
+  </style>
+</head>
+<body>
+
+  <!-- Three.js canvas background -->
+  <canvas id="bgCanvas"></canvas>
+
+  <!-- Loading overlay -->
+  <div id="loader" role="status" aria-live="polite">
+    <div class="loader-card">
+      <div class="neon-logo">NEON GALAXY — LOADING SCENE</div>
+      <div class="spinner" aria-hidden="true"></div>
+      <div style="color:#cfefff; font-size:13px; margin-top:8px;">در حال ساخت پس‌زمینهٔ کهکشانی — لطفاً کمی صبر کنید</div>
+    </div>
+  </div>
+
+  <div class="page">
+    <button class="user-panel-btn" onclick="togglePanel()">پنل کاربری</button>
+    <div class="user-panel" id="userPanel">
+      <h2>پنل کاربری شما</h2>
+      <p><strong>رَنگ:</strong> فعال نشده!</p>
+      <p><strong>مدت بازی در سرور:</strong> 0 ساعت</p>
+      <p><strong>اشتراک:</strong> بدون اشتراک</p>
+    </div>
+
+    <div class="container">
+
+      <div class="download-card">
+        <p>قبل ورود به سرور این فایل را دانلود کنید و در پوشه <span style="color:var(--neon-green);">mods</span> در <span style="color:var(--neon-green);">TLauncher</span> بگذارید.<br>نسخه بازی شما باید <span style="color:#ff9aa2;">1.20.1 Forge</span> باشد.</p>
+        <a href="https://s34.picofile.com/file/8486324276/BlockFront_1_20_1_0_2_0_19a_RELEASE.jar.html" target="_blank" rel="noopener" style="display:inline-block;margin-top:10px;padding:8px 14px;border-radius:12px;background:linear-gradient(90deg,var(--accent-pink),var(--neon-purple));color:white;font-weight:900;text-decoration:none;">📥 دانلود فایل</a>
+      </div>
+
+      <div class="quick-match">
+        <h1>auto connect</h1>
+        <button onclick="toggleServers()">سرورها ▲</button>
+        <div id="serverList" style="margin-top:8px; opacity:0; max-height:0; overflow:hidden; transition:all .38s;">
+          <select id="serverSelect">
+            <option value="1">سرور 1</option>
+            <option value="2">سرور 2</option>
+            <option value="3">سرور 3</option>
+          </select>
+          <button onclick="connectServer()">تأیید</button>
+          <div class="status-msg" id="status"></div>
+        </div>
+
+        <button id="verifyBtn" style="margin-top:10px; font-weight:900;">✅ Verify</button>
+      </div>
+
+      <div class="server-boxes">
+        <!-- server 1 -->
+        <div class="server-item" data-server="1">
+          <div class="card-reflect" aria-hidden="true"></div>
+          <img class="main-img" src="https://i.ibb.co/0cM2fzX/wwii.png" alt="WWII" draggable="false" />
+          <img class="icon" src="https://cdn-icons-png.flaticon.com/512/8925/8925522.png" alt="icon" draggable="false" />
+          <h3>کلیک کنید</h3>
+          <p>برای اتصال به ادمین پیام بدهید</p>
+          <button class="connect-btn" onclick="startConnectFlow(this)">اتصال</button>
+          <div class="server-status" aria-live="polite"></div>
+        </div>
+
+        <!-- server 2 -->
+        <div class="server-item" data-server="2">
+          <div class="card-reflect" aria-hidden="true"></div>
+          <img class="main-img" src="https://i.ibb.co/vQf5W8B/cs2.png" alt="CS2" draggable="false" />
+          <img class="icon" src="https://cdn-icons-png.flaticon.com/512/8925/8925522.png" alt="icon" draggable="false" />
+          <h3>کلیک کنید</h3>
+          <p>برای اتصال به ادمین پیام بدهید</p>
+          <button class="connect-btn" onclick="startConnectFlow(this)">اتصال</button>
+          <div class="server-status" aria-live="polite"></div>
+        </div>
+      </div>
+
+      <!-- game selection -->
+      <div id="game-section">
+        <h2 class="game-title">Game ?</h2>
+        <div id="game-options">
+          <button class="game-btn" style="background:linear-gradient(90deg,#0b6623,#3fcf7f);" onclick="selectGame('Minecraft', this)">Minecraft</button>
+          <button class="game-btn" style="background:linear-gradient(90deg,#d46c08,#ffd166);" onclick="selectGame('CS 2', this)">CS 2</button>
+          <button class="game-btn" style="background:linear-gradient(90deg,#909090,#cfcfcf);" onclick="selectGame('Rainbow Six', this)">Rainbow Six</button>
+          <button class="game-btn" style="background:linear-gradient(90deg,#8b0000,#ff3b3b);" onclick="selectGame('Dota 2', this)">Dota 2</button>
+          <button class="game-btn" style="background:linear-gradient(90deg,#c87b2b,#ffd59e);" onclick="selectGame('Rust', this)">Rust</button>
+          <button class="game-btn" style="background:linear-gradient(90deg,#2f4f2f,#66b266);" onclick="selectGame('Warzone', this)">Warzone</button>
+          <button class="game-btn" style="background:linear-gradient(90deg,#6a2bd6,#b58aff);" onclick="selectGame('Other Game', this)">Other Game</button>
+        </div>
+
+        <div id="other-input" style="display:none; margin-top:12px;">
+          <input type="text" id="customGame" placeholder="Enter your game ">
+          <button id="submitGame">Submit</button>
+        </div>
+
+        <div id="selected-game" aria-live="polite">نام بازی انتخاب نشده</div>
+      </div>
+
+    </div>
+
+    <footer>
+      <a href="https://sites.google.com/view/server-main-/%D8%B5%D9%81%D8%AD%D9%87-%D8%A7%D8%B5%D9%84%DB%8C" target="_blank" rel="noopener">در صورت مشکل، به سایت دوم مراجعه کنید (سرور 2) — اینجا کلیک کنید *</a>
+    </footer>
+  </div>
+
+  <!-- Three.js CDN -->
+  <script src="https://unpkg.com/three@0.154.0/build/three.min.js"></script>
+
+  <script>
+    /*************** keep original functions semantics (do not break existing behavior) ***************/
+    function togglePanel() {
+      document.getElementById('userPanel').classList.toggle('show');
+    }
+    function toggleServers() {
+      const el = document.getElementById('serverList');
+      el.classList.toggle('show');
+      if(el.classList.contains('show')) { el.style.opacity = 1; el.style.maxHeight = '300px'; }
+      else { el.style.opacity = 0; el.style.maxHeight = '0'; }
+    }
+    function connectServer() {
+      const server = document.getElementById('serverSelect').value;
+      const status = document.getElementById('status');
+      if (server === '3') {
+        status.innerHTML = '<span style="color: orange">سرور در دسترس نیست</span>';
+        return;
+      }
+      status.innerHTML = '<span style="color: white">در حال اتصال...</span>';
+      setTimeout(() => { status.innerHTML = '<span style="color: red">اتصال قطع شد</span>'; }, 5000);
+    }
+
+    const verifyBtn = document.getElementById('verifyBtn');
+    if(verifyBtn){
+      verifyBtn.addEventListener('mouseover', function(){ this.style.boxShadow = '0 0 28px #0ff,0 0 60px #0f0'; this.style.transform = 'scale(1.02)'; });
+      verifyBtn.addEventListener('mouseout', function(){ this.style.boxShadow = ''; this.style.transform = 'scale(1)'; });
+      verifyBtn.addEventListener('click', function(){
+        const flash = document.createElement('div');
+        flash.className = 'flash-effect';
+        flash.style.position = 'fixed'; flash.style.top = '50%'; flash.style.left = '50%';
+        flash.style.width = '0'; flash.style.height = '0';
+        flash.style.background = 'radial-gradient(circle, rgba(0,255,255,0.9), rgba(0,255,0,0.6), transparent 70%)';
+        flash.style.borderRadius = '50%'; flash.style.transform = 'translate(-50%,-50%)'; flash.style.zIndex = '1999';
+        document.body.appendChild(flash);
+        setTimeout(() => { window.location.href = 'https://madsmart13.github.io/verify/'; }, 500);
+      });
+    }
+
+    /* Game selection (kept) + display RGB effect */
+    (function(){
+      const buttons = document.querySelectorAll('#game-options .game-btn');
+      const selectedGameDiv = document.getElementById('selected-game');
+      const optionsDiv = document.getElementById('game-options');
+      const otherInput = document.getElementById('other-input');
+      const submitBtn = document.getElementById('submitGame');
+      const inputField = document.getElementById('customGame');
+
+      buttons.forEach(btn => {
+        btn.addEventListener('click', () => {
+          const txt = btn.textContent.trim();
+          if(txt === 'Other Game'){
+            otherInput.style.display = "block";
+          } else {
+            showSelected(txt, btn.style.background);
+          }
+        });
+      });
+
+      if(submitBtn){
+        submitBtn.addEventListener('click', () => {
+          const val = inputField.value.trim();
+          if(val !== ""){
+            optionsDiv.style.display = "none";
+            otherInput.style.display = "none";
+            showSelected(val, null);
+          }
+        });
+      }
+
+      function showSelected(name){
+        // update UI
+        selectedGameDiv.textContent = name;
+        selectedGameDiv.style.backgroundImage = 'linear-gradient(90deg, #ff004d, #ff8a00, #ffef00, #00ff88, #6a2bd6)';
+        selectedGameDiv.style.webkitBackgroundClip = 'text';
+        selectedGameDiv.style.color = 'transparent';
+        // animate subtle glow
+        selectedGameDiv.animate([
+          { filter: 'drop-shadow(0 0 0 rgba(0,0,0,0))' },
+          { filter: 'drop-shadow(0 0 18px rgba(106,43,214,0.12))' }
+        ], { duration: 900, iterations: 1, easing: 'ease-out' });
+      }
+      window.selectGame = showSelected;
+    })();
+
+    /* ---------- Connect flow: loader -> final message with animated badge ---------- */
+    function startConnectFlow(btn){
+      const card = btn.closest('.server-item');
+      const statusEl = card.querySelector('.server-status');
+      // clear
+      statusEl.innerHTML = '';
+
+      // loader with pulsing bars + galaxy shimmer
+      const loaderWrap = document.createElement('div');
+      loaderWrap.className = 'connect-loader';
+      for(let i=0;i<5;i++){
+        const b = document.createElement('div'); b.className = 'pulse-bar'; loaderWrap.appendChild(b);
+      }
+      statusEl.appendChild(loaderWrap);
+
+      // add temporary subtle glow on card
+      card.style.boxShadow = '0 30px 90px rgba(0,0,0,0.75), 0 0 40px rgba(138,60,255,0.06)';
+      setTimeout(()=>{ card.style.boxShadow = ''; }, 2800);
+
+      setTimeout(() => {
+        statusEl.innerHTML = '';
+        const final = document.createElement('div'); final.className = 'final-msg';
+        const pers = document.createElement('div'); pers.className='persian'; pers.textContent = 'برای اتصال به ادمین پیام بدهید';
+        const eng = document.createElement('div'); eng.className='english';
+        // badge
+        const badge = document.createElement('div'); badge.className='online-badge';
+        const stripes = document.createElement('div'); stripes.className='stripes';
+        const dot = document.createElement('div'); dot.className='dot';
+        badge.appendChild(stripes); badge.appendChild(dot);
+        const label = document.createElement('div'); label.style.fontWeight='900'; label.textContent='Server Online';
+        eng.appendChild(badge); eng.appendChild(label);
+        final.appendChild(pers); final.appendChild(eng);
+        statusEl.appendChild(final);
+        statusEl.setAttribute('aria-live','polite');
+      }, 3000);
+    }
+
+    /* -------------------- Three.js Galaxy background (advanced shader + particles) -------------------- */
+    (function(){
+      if(!window.WebGLRenderingContext){
+        const l = document.getElementById('loader'); if(l) l.classList.add('hidden'); return;
+      }
+
+      const canvas = document.getElementById('bgCanvas');
+      let renderer, scene, camera, composer;
+      let clock = new THREE.Clock();
+      let particleSys, nebula, rails = [];
+
+      const isMobile = /Mobi|Android/i.test(navigator.userAgent);
+      const PARTICLE_COUNT = isMobile ? 600 : 1800;
+
+      function init(){
+        renderer = new THREE.WebGLRenderer({ canvas: canvas, antialias:true, alpha:true, powerPreference:'high-performance' });
+        renderer.setPixelRatio(Math.min(window.devicePixelRatio || 1, 2));
+        renderer.setSize(window.innerWidth, window.innerHeight);
+        renderer.outputEncoding = THREE.sRGBEncoding;
+        renderer.toneMapping = THREE.ACESFilmicToneMapping;
+
+        scene = new THREE.Scene();
+        scene.fog = new THREE.FogExp2(0x000009, 0.0018);
+
+        camera = new THREE.PerspectiveCamera(55, window.innerWidth/window.innerHeight, 0.1, 2000);
+        camera.position.set(0, 12, 72);
+
+        // soft ambient + fill
+        scene.add(new THREE.AmbientLight(0x2e1f3a, 0.55));
+        const fill = new THREE.DirectionalLight(0x66ffcc, 0.6); fill.position.set(8,12,4); scene.add(fill);
+
+        createNebula();
+        createParticles();
+        createRails();
+
+        window.addEventListener('resize', onResize, {passive:true});
+        // allow slight parallax on mouse move for depth
+        window.addEventListener('mousemove', onPointerMove, {passive:true});
+      }
+
+      // Nebula plane with fragment shader (smooth cinematic clouds + streaks)
+      function createNebula(){
+        const geo = new THREE.PlaneGeometry(220, 120, 1, 1);
+        const mat = new THREE.ShaderMaterial({
+          transparent: true,
+          depthWrite: false,
+          uniforms: {
+            uTime: { value: 0 },
+            uResolution: { value: new THREE.Vector2(window.innerWidth, window.innerHeight) },
+            uPurple: { value: new THREE.Color(0x8a3cff) },
+            uGreen: { value: new THREE.Color(0x00ff88) },
+            uIntensity: { value: 0.9 },
+            uNoiseScale: { value: 0.9 }
+          },
+          vertexShader: `
+            varying vec2 vUv;
+            void main(){ vUv = uv; gl_Position = projectionMatrix * modelViewMatrix * vec4(position,1.0); }
+          `,
+          fragmentShader: `
+            precision highp float;
+            varying vec2 vUv;
+            uniform float uTime;
+            uniform vec3 uPurple;
+            uniform vec3 uGreen;
+            uniform float uIntensity;
+            uniform float uNoiseScale;
+
+            // simple 3D noise approx (FBM using sin)
+            float hash(vec2 p){ return fract(sin(dot(p,vec2(127.1,311.7))) * 43758.5453123); }
+            float noise(vec2 p){
+              vec2 i = floor(p);
+              vec2 f = fract(p);
+              float a = hash(i);
+              float b = hash(i+vec2(1.0,0.0));
+              float c = hash(i+vec2(0.0,1.0));
+              float d = hash(i+vec2(1.0,1.0));
+              vec2 u = f*f*(3.0-2.0*f);
+              return mix(a,b,u.x) + (c-a)*u.y*(1.0-u.x) + (d-b)*u.x*u.y;
+            }
+            float fbm(vec2 p){
+              float v=0.0;
+              float amp=0.5;
+              for(int i=0;i<5;i++){
+                v += amp * noise(p);
+                p *= 2.0;
+                amp *= 0.5;
+              }
+              return v;
+            }
+
+            void main(){
+              vec2 uv = vUv * vec2(1.6,1.0);
+              float t = uTime * 0.06;
+
+              // base cloud
+              float n = fbm((uv + vec2(t*0.06, -t*0.02)) * (6.0 * uNoiseScale));
+              float n2 = fbm((uv*1.5 - vec2(t*0.02)) * 3.0);
+
+              // streaks/rays
+              float stripes = sin((uv.x*12.0 + t*1.2) * (1.0 + fbm(uv*3.0)*0.8));
+              stripes = smoothstep(0.6, 0.9, stripes*0.5 + n*0.6);
+
+              // combine purple/green gradients
+              vec3 col = mix(uPurple, uGreen, uv.y + n*0.4);
+              col = mix(col, vec3(0.02,0.02,0.03), 1.0 - smoothstep(0.0,1.0,n2));
+              // add subtle glow in centers
+              col += vec3(0.12,0.07,0.14) * (n * 0.6);
+
+              // add streaks brightening
+              col += vec3(0.4,0.8,0.6) * (stripes * 0.12);
+
+              float alpha = smoothstep(0.06, 0.8, n);
+              alpha *= 0.92;
+
+              gl_FragColor = vec4(col * uIntensity, alpha);
+              // premultiply for smoother additive blending
+              gl_FragColor.rgb *= gl_FragColor.a;
+            }
+          `
+        });
+        nebula = new THREE.Mesh(geo, mat);
+        nebula.position.set(0, 6, -40);
+        nebula.rotation.x = -0.15;
+        scene.add(nebula);
+      }
+
+      // Particles (soft points) for stars / dust
+      function createParticles(){
+        const geom = new THREE.BufferGeometry();
+        const pos = new Float32Array(PARTICLE_COUNT*3);
+        const col = new Float32Array(PARTICLE_COUNT*3);
+        for(let i=0;i<PARTICLE_COUNT;i++){
+          const radius = 10 + Math.random()*80;
+          const theta = Math.random() * Math.PI * 2;
+          const phi = (Math.random()-0.5) * Math.PI * 0.6;
+          pos[i*3] = Math.cos(theta)*radius;
+          pos[i*3+1] = (Math.random()-0.5)*20;
+          pos[i*3+2] = Math.sin(theta)*radius;
+          const t = Math.random();
+          col[i*3] = (1-t)*0.6 + t*0.0;
+          col[i*3+1] = (1-t)*0.35 + t*1.0;
+          col[i*3+2] = (1-t)*1.0 + t*0.6;
+        }
+        geom.setAttribute('position', new THREE.BufferAttribute(pos,3));
+        geom.setAttribute('color', new THREE.BufferAttribute(col,3));
+        const mat = new THREE.PointsMaterial({ size: isMobile?2.5:5.0, vertexColors:true, transparent:true, opacity:0.95, blending:THREE.AdditiveBlending, depthWrite:false });
+        particleSys = new THREE.Points(geom, mat);
+        scene.add(particleSys);
+      }
+
+      // neon rails (curved circles) for gamer-grid effect
+      function createRails(){
+        const railCount = 6;
+        for(let r=0;r<railCount;r++){
+          const geom = new THREE.BufferGeometry();
+          const pts = [];
+          const segs = 220;
+          const radius = 18 + r*5;
+          for(let i=0;i<segs;i++){
+            const ang = i / segs * Math.PI * 2;
+            const x = Math.cos(ang) * radius;
+            const z = Math.sin(ang) * radius;
+            const y = Math.sin(i * 0.06 + r) * 3 - (r*0.6);
+            pts.push(x,y,z);
+          }
+          geom.setAttribute('position', new THREE.Float32BufferAttribute(pts,3));
+          const color = r%2?0x8a3cff:0x00ff88;
+          const mat = new THREE.LineBasicMaterial({ color: color, transparent:true, opacity: 0.06 + r*0.01 });
+          const line = new THREE.LineLoop(geom, mat);
+          line.rotation.x = Math.PI*0.45;
+          line.userData = { speed: 0.002 + r*0.0006, offset: Math.random()*10 };
+          scene.add(line);
+          rails.push(line);
+        }
+      }
+
+      // pointer parallax
+      let pointer = { x:0, y:0 };
+      function onPointerMove(e){
+        pointer.x = (e.clientX / window.innerWidth) * 2 - 1;
+        pointer.y = (e.clientY / window.innerHeight) * 2 - 1;
+      }
+
+      function onResize(){
+        renderer.setSize(window.innerWidth, window.innerHeight);
+        camera.aspect = window.innerWidth / window.innerHeight;
+        camera.updateProjectionMatrix();
+      }
+
+      function animate(){
+        requestAnimationFrame(animate);
+        const t = clock.getElapsedTime();
+        // nebula movement
+        if(nebula && nebula.material && nebula.material.uniforms){
+          nebula.material.uniforms.uTime.value = t;
+        }
+        // particles gentle rotation
+        if(particleSys){ particleSys.rotation.y = Math.sin(t*0.02) * 0.06; particleSys.rotation.x = Math.cos(t*0.01)*0.01; }
+        // rails drift
+        rails.forEach((r, idx) => {
+          r.rotation.z += r.userData.speed * (1 + Math.sin(t*0.1 + r.userData.offset)*0.25);
+          r.material.opacity = 0.04 + idx*0.01 + Math.abs(Math.sin(t*0.12 + idx))*0.01;
+        });
+        // camera subtle parallax from pointer
+        camera.position.x = Math.sin(t*0.06)*6 + pointer.x * 6;
+        camera.position.y = 12 + pointer.y * -4;
+        camera.position.z = 72 + Math.cos(t*0.03)*3;
+        camera.lookAt(0,4,0);
+        renderer.render(scene, camera);
+      }
+
+      // start scene init and animation
+      try{
+        init();
+        // small delay to show loader briefly and let shaders compile
+        setTimeout(()=>{
+          const l = document.getElementById('loader'); if(l) l.classList.add('hidden');
+          clock.start(); animate();
+        }, 700);
+      }catch(err){
+        console.error('three init error', err);
+        const l = document.getElementById('loader'); if(l) l.classList.add('hidden');
+      }
+    })();
+
+    /* ---------- Card reflect interaction (pure CSS transform driven by mouse) ---------- */
+    (function(){
+      const cards = document.querySelectorAll('.server-item');
+      cards.forEach(card => {
+        card.addEventListener('mousemove', function(e){
+          const rect = card.getBoundingClientRect();
+          const cx = rect.left + rect.width/2;
+          const cy = rect.top + rect.height/2;
+          const dx = (e.clientX - cx);
+          const dy = (e.clientY - cy);
+          const rx = (-dy / rect.height) * 6; // rotateX
+          const ry = (dx / rect.width) * 10;  // rotateY
+          card.style.transform = `perspective(900px) rotateX(${rx}deg) rotateY(${ry}deg) translateY(-6px)`;
+          // move reflect gradient
+          const reflect = card.querySelector('.card-reflect');
+          if(reflect){
+            const px = (e.clientX - rect.left) / rect.width * 100;
+            const py = (e.clientY - rect.top) / rect.height * 100;
+            reflect.style.background = `radial-gradient(circle at ${px}% ${py}%, rgba(255,255,255,0.06), rgba(255,255,255,0.01) 18%, transparent 40%)`;
+            reflect.style.opacity = '0.95';
+            reflect.style.transform = `translateZ(0) rotate(${ry*0.6}deg)`;
+          }
+        });
+        card.addEventListener('mouseleave', function(){
+          card.style.transform = '';
+          const reflect = card.querySelector('.card-reflect');
+          if(reflect){ reflect.style.background = ''; reflect.style.opacity = '0.65'; reflect.style.transform = 'translateZ(0)'; }
+        });
+      });
+    })();
+
+    /* Accessibility: ensure loader hide on error fallback */
+    window.addEventListener('error', function(){ const l=document.getElementById('loader'); if(l) l.classList.add('hidden'); });
+
+  </script>
+</body>
+</html>
